@@ -83,20 +83,34 @@ router.post('/claude-accounts/exchange-code', authenticateAdmin, async (req, res
     }
 
     // 统一处理授权码输入（可能是直接的code或完整的回调URL）
-    let finalAuthCode
+    let parsedResult
     const inputValue = callbackUrl || authorizationCode
 
     try {
-      finalAuthCode = oauthHelper.parseCallbackUrl(inputValue)
+      parsedResult = oauthHelper.parseCallbackUrl(inputValue)
     } catch (parseError) {
       return res
         .status(400)
         .json({ error: 'Failed to parse authorization input', message: parseError.message })
     }
 
+    // Security fix: Validate state parameter to prevent CSRF attacks
+    // If state was returned in the callback URL, it must match the stored state
+    if (parsedResult.state && parsedResult.state !== oauthSession.state) {
+      logger.warn('⚠️ OAuth state mismatch detected - possible CSRF attack', {
+        returnedState: parsedResult.state?.substring(0, 10) + '...',
+        expectedState: oauthSession.state?.substring(0, 10) + '...'
+      })
+      await redis.deleteOAuthSession(sessionId)
+      return res.status(400).json({
+        error: 'Invalid OAuth state',
+        message: 'State parameter mismatch - the OAuth flow may have been tampered with'
+      })
+    }
+
     // 交换访问令牌
     const tokenData = await oauthHelper.exchangeCodeForTokens(
-      finalAuthCode,
+      parsedResult.code,
       oauthSession.codeVerifier,
       oauthSession.state,
       oauthSession.proxy // 传递代理配置

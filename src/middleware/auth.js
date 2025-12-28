@@ -163,12 +163,12 @@ const TOKEN_COUNT_PATHS = new Set([
 ])
 
 function extractApiKey(req) {
+  // Security fix: Removed req.query?.key to prevent API Key exposure in logs/URLs
   const candidates = [
     req.headers['x-api-key'],
     req.headers['x-goog-api-key'],
     req.headers['authorization'],
-    req.headers['api-key'],
-    req.query?.key
+    req.headers['api-key']
   ]
 
   for (const candidate of candidates) {
@@ -1853,19 +1853,23 @@ const securityMiddleware = (req, res, next) => {
   }
 
   // Content Security Policy (适用于web界面)
-  if (req.path.startsWith('/web') || req.path === '/') {
+  // Security fix: Extended CSP to /admin-next and added more restrictions
+  if (req.path.startsWith('/web') || req.path.startsWith('/admin-next') || req.path === '/') {
     res.setHeader(
       'Content-Security-Policy',
       [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://cdn.bootcdn.net",
         "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.bootcdn.net",
-        "font-src 'self' https://cdnjs.cloudflare.com https://cdn.bootcdn.net",
-        "img-src 'self' data:",
+        "font-src 'self' https://cdnjs.cloudflare.com https://cdn.bootcdn.net data:",
+        "img-src 'self' data: https:",
         "connect-src 'self'",
         "frame-ancestors 'none'",
         "base-uri 'self'",
-        "form-action 'self'"
+        "form-action 'self'",
+        "object-src 'none'", // Security fix: Prevent plugin execution
+        "worker-src 'self' blob:", // Allow service workers
+        "manifest-src 'self'" // Allow web app manifest
       ].join('; ')
     )
   }

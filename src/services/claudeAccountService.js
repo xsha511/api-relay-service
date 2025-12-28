@@ -1160,21 +1160,24 @@ class ClaudeAccountService {
   }
 
   // 🔐 加密敏感数据
+  // Security fix: Now uses random salt per encryption for better security
   _encryptSensitiveData(data) {
     if (!data) {
       return ''
     }
 
     try {
-      const key = this._generateEncryptionKey()
+      // Security fix: Generate random salt for each encryption
+      const salt = crypto.randomBytes(16)
+      const key = this._generateEncryptionKey(salt)
       const iv = crypto.randomBytes(16)
 
       const cipher = crypto.createCipheriv(this.ENCRYPTION_ALGORITHM, key, iv)
       let encrypted = cipher.update(data, 'utf8', 'hex')
       encrypted += cipher.final('hex')
 
-      // 将IV和加密数据一起返回，用:分隔
-      return `${iv.toString('hex')}:${encrypted}`
+      // New format: salt:iv:encrypted (3 parts)
+      return `${salt.toString('hex')}:${iv.toString('hex')}:${encrypted}`
     } catch (error) {
       logger.error('❌ Encryption error:', error)
       return data
@@ -1182,6 +1185,7 @@ class ClaudeAccountService {
   }
 
   // 🔓 解密敏感数据
+  // Security fix: Now supports random salt format (salt:iv:encrypted)
   _decryptSensitiveData(encryptedData) {
     if (!encryptedData) {
       return ''
@@ -1197,12 +1201,29 @@ class ClaudeAccountService {
     try {
       let decrypted = ''
 
-      // 检查是否是新格式（包含IV）
+      // 检查格式
       if (encryptedData.includes(':')) {
-        // 新格式：iv:encryptedData
         const parts = encryptedData.split(':')
+
+        // Security fix: New format with random salt (salt:iv:encrypted) - 3 parts
+        if (parts.length === 3) {
+          const salt = Buffer.from(parts[0], 'hex')
+          const iv = Buffer.from(parts[1], 'hex')
+          const encrypted = parts[2]
+          const key = this._generateEncryptionKey(salt)
+
+          const decipher = crypto.createDecipheriv(this.ENCRYPTION_ALGORITHM, key, iv)
+          decrypted = decipher.update(encrypted, 'hex', 'utf8')
+          decrypted += decipher.final('utf8')
+
+          // 💾 存入缓存（5分钟过期）
+          this._decryptCache.set(cacheKey, decrypted, 5 * 60 * 1000)
+          return decrypted
+        }
+
+        // Old format with fixed salt (iv:encrypted) - 2 parts
         if (parts.length === 2) {
-          const key = this._generateEncryptionKey()
+          const key = this._generateEncryptionKey() // Uses fixed salt for backward compatibility
           const iv = Buffer.from(parts[0], 'hex')
           const encrypted = parts[1]
 
@@ -1245,7 +1266,14 @@ class ClaudeAccountService {
   }
 
   // 🔑 生成加密密钥（辅助方法）
-  _generateEncryptionKey() {
+  // Security fix: Now supports random salt parameter for per-encryption salt
+  _generateEncryptionKey(salt = null) {
+    // If random salt provided, derive key directly (no caching for security)
+    if (salt) {
+      return crypto.scryptSync(config.security.encryptionKey, salt, 32)
+    }
+
+    // For backward compatibility: use fixed salt with caching
     // 性能优化：缓存密钥派生结果，避免重复的 CPU 密集计算
     // scryptSync 是故意设计为慢速的密钥派生函数（防暴力破解）
     // 但在高并发场景下，每次都重新计算会导致 CPU 100% 占用

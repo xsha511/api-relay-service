@@ -326,12 +326,14 @@ function parseCallbackUrl(input) {
     try {
       const urlObj = new URL(trimmedInput)
       const authorizationCode = urlObj.searchParams.get('code')
+      const returnedState = urlObj.searchParams.get('state') // Security fix: extract state for validation
 
       if (!authorizationCode) {
         throw new Error('回调 URL 中未找到授权码 (code 参数)')
       }
 
-      return authorizationCode
+      // Return both code and state for CSRF validation
+      return { code: authorizationCode, state: returnedState }
     } catch (error) {
       if (error.message.includes('回调 URL 中未找到授权码')) {
         throw error
@@ -355,7 +357,8 @@ function parseCallbackUrl(input) {
     throw new Error('授权码包含无效字符，请检查是否复制了正确的 Authorization Code')
   }
 
-  return cleanedCode
+  // Return as object for consistency (no state when code provided directly)
+  return { code: cleanedCode, state: null }
 }
 
 /**

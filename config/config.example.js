@@ -13,7 +13,7 @@ const config = {
   // 🔐 安全配置
   security: {
     jwtSecret: process.env.JWT_SECRET || 'CHANGE-THIS-JWT-SECRET-IN-PRODUCTION',
-    adminSessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT) || 86400000, // 24小时
+    adminSessionTimeout: parseInt(process.env.ADMIN_SESSION_TIMEOUT) || 14400000, // Security fix: 4小时 (was 24小时)
     apiKeyPrefix: process.env.API_KEY_PREFIX || 'cr_',
     encryptionKey: process.env.ENCRYPTION_KEY || 'CHANGE-THIS-32-CHARACTER-KEY-NOW'
   },

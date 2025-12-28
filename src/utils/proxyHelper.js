@@ -33,6 +33,12 @@ class ProxyHelper {
         return null
       }
 
+      // Security fix: Validate proxy host to prevent SSRF attacks on internal networks
+      if (ProxyHelper._isInternalHost(proxy.host)) {
+        logger.warn(`⚠️ Security: Proxy host "${proxy.host}" points to internal network, rejected`)
+        return null
+      }
+
       // 获取 IPv4/IPv6 配置
       const useIPv4 = ProxyHelper._getIPFamilyPreference(options.useIPv4)
 
@@ -266,6 +272,77 @@ class ProxyHelper {
   static createProxy(proxyConfig, useIPv4 = true) {
     logger.warn('⚠️ ProxyHelper.createProxy is deprecated, use createProxyAgent instead')
     return ProxyHelper.createProxyAgent(proxyConfig, { useIPv4 })
+  }
+
+  /**
+   * Check if host is an internal/private network address (SSRF protection)
+   * @param {string} host - Host to check
+   * @returns {boolean} True if host is internal/private
+   * @private
+   */
+  static _isInternalHost(host) {
+    if (!host) return false
+
+    const lowerHost = host.toLowerCase().trim()
+
+    // Localhost variants
+    if (
+      lowerHost === 'localhost' ||
+      lowerHost === 'localhost.localdomain' ||
+      lowerHost.endsWith('.localhost')
+    ) {
+      return true
+    }
+
+    // IPv4 private ranges and special addresses
+    const ipv4Pattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+    const ipv4Match = lowerHost.match(ipv4Pattern)
+    if (ipv4Match) {
+      const [, a, b, c, d] = ipv4Match.map(Number)
+
+      // Validate IP range
+      if ([a, b, c, d].some((n) => n > 255)) return false
+
+      // Loopback: 127.0.0.0/8
+      if (a === 127) return true
+
+      // Private: 10.0.0.0/8
+      if (a === 10) return true
+
+      // Private: 172.16.0.0/12
+      if (a === 172 && b >= 16 && b <= 31) return true
+
+      // Private: 192.168.0.0/16
+      if (a === 192 && b === 168) return true
+
+      // Link-local: 169.254.0.0/16 (including AWS metadata service 169.254.169.254)
+      if (a === 169 && b === 254) return true
+
+      // Current network: 0.0.0.0/8
+      if (a === 0) return true
+    }
+
+    // IPv6 patterns (simplified check)
+    if (lowerHost.startsWith('[')) {
+      const ipv6 = lowerHost.slice(1, -1) // Remove brackets
+      // Loopback ::1
+      if (ipv6 === '::1') return true
+      // Link-local fe80::/10
+      if (ipv6.startsWith('fe80:')) return true
+      // Unique local fc00::/7
+      if (ipv6.startsWith('fc') || ipv6.startsWith('fd')) return true
+    }
+
+    // Cloud metadata service hostnames
+    const metadataHosts = [
+      'metadata.google.internal',
+      'metadata.goog',
+      'metadata',
+      'instance-data'
+    ]
+    if (metadataHosts.includes(lowerHost)) return true
+
+    return false
   }
 }
 

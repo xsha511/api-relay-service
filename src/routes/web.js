@@ -22,6 +22,32 @@ router.post('/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body
 
+    // Security fix: Rate limiting for login attempts
+    const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown'
+    const rateLimitKey = `login_attempts:${clientIp}`
+    const maxAttempts = 5 // Max 5 attempts
+    const windowSeconds = 300 // 5 minute window
+    const lockoutSeconds = 900 // 15 minute lockout after max attempts
+
+    try {
+      const redisClient = redis.getClient()
+      const attempts = await redisClient.get(rateLimitKey)
+      const attemptCount = parseInt(attempts) || 0
+
+      if (attemptCount >= maxAttempts) {
+        const ttl = await redisClient.ttl(rateLimitKey)
+        logger.security(`🚫 Login rate limit exceeded for IP: ${clientIp}`)
+        return res.status(429).json({
+          error: 'Too many login attempts',
+          message: `Too many failed login attempts. Please try again in ${Math.ceil(ttl / 60)} minutes.`,
+          retryAfter: ttl
+        })
+      }
+    } catch (rateLimitError) {
+      // Continue if rate limit check fails (Redis issue)
+      logger.warn('⚠️ Rate limit check failed:', rateLimitError.message)
+    }
+
     if (!username || !password) {
       return res.status(400).json({
         error: 'Missing credentials',
@@ -74,11 +100,34 @@ router.post('/auth/login', async (req, res) => {
     const isValidPassword = await bcrypt.compare(password, adminData.passwordHash)
 
     if (!isValidUsername || !isValidPassword) {
-      logger.security(`🔒 Failed login attempt for username: ${username}`)
+      // Security fix: Increment failed login counter
+      try {
+        const redisClient = redis.getClient()
+        const currentAttempts = await redisClient.incr(rateLimitKey)
+        if (currentAttempts === 1) {
+          // First failed attempt, set expiry
+          await redisClient.expire(rateLimitKey, windowSeconds)
+        } else if (currentAttempts >= maxAttempts) {
+          // Max attempts reached, extend lockout
+          await redisClient.expire(rateLimitKey, lockoutSeconds)
+        }
+      } catch (rateLimitError) {
+        logger.warn('⚠️ Rate limit increment failed:', rateLimitError.message)
+      }
+
+      logger.security(`🔒 Failed login attempt for username: ${username} from IP: ${clientIp}`)
       return res.status(401).json({
         error: 'Invalid credentials',
         message: 'Invalid username or password'
       })
+    }
+
+    // Security fix: Clear rate limit on successful login
+    try {
+      const redisClient = redis.getClient()
+      await redisClient.del(rateLimitKey)
+    } catch (rateLimitError) {
+      // Non-critical, continue
     }
 
     // 生成会话token

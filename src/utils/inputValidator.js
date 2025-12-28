@@ -65,10 +65,15 @@ class InputValidator {
 
   /**
    * 验证密码强度
+   * Security fix: Added complexity requirements
    * @param {string} password - 密码
+   * @param {object} options - 验证选项
+   * @param {boolean} options.requireComplexity - 是否要求复杂性（默认true）
    * @returns {boolean} 验证结果
    */
-  validatePassword(password) {
+  validatePassword(password, options = {}) {
+    const { requireComplexity = true } = options
+
     if (!password || typeof password !== 'string') {
       throw new Error('密码必须是非空字符串')
     }
@@ -81,6 +86,20 @@ class InputValidator {
     // 最大长度（防止DoS攻击）
     if (password.length > 128) {
       throw new Error('密码不能超过128个字符')
+    }
+
+    // Security fix: Password complexity requirements
+    if (requireComplexity) {
+      const hasUppercase = /[A-Z]/.test(password)
+      const hasLowercase = /[a-z]/.test(password)
+      const hasNumber = /[0-9]/.test(password)
+      const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+
+      const complexityScore = [hasUppercase, hasLowercase, hasNumber, hasSpecial].filter(Boolean).length
+
+      if (complexityScore < 3) {
+        throw new Error('密码必须包含以下至少3种: 大写字母、小写字母、数字、特殊字符')
+      }
     }
 
     return true
