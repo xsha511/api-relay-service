@@ -4,6 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这个文件为 Claude Code (claude.ai/code) 提供在此代码库中工作的指导。
 
+## 生产服务器
+
+- **IP**: 52.52.6.139
+- **SSH**: `ssh -i ~/.ssh/AI.pem ubuntu@52.52.6.139`
+- **部署路径**: `/home/ubuntu/claude-relay-service`
+- **日志路径**: `/home/ubuntu/claude-relay-service/logs/`
+- **进程管理**: PM2 (`pm2 status`, `pm2 logs claude-relay`)
+
 ## 项目概述
 
 Claude Relay Service 是一个多平台 AI API 中转服务，支持 **Claude (官方/Console)、Gemini、OpenAI Responses (Codex)、AWS Bedrock、Azure OpenAI、Droid (Factory.ai)、CCR** 等多种账户类型。提供完整的多账户管理、API Key 认证、代理配置、用户管理、LDAP认证、Webhook通知和现代化 Web 管理界面。该服务作为客户端（如 Claude Code、Gemini CLI、Codex、Droid CLI、Cherry Studio 等）与 AI API 之间的中间件，提供认证、限流、监控、定价计算、成本统计等功能。
