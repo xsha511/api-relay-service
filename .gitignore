@@ -249,3 +249,7 @@ web/apiStats/
 web/admin-spa/dist/
 
 .serena/
+
+# Node deployment scripts and docs (local only)
+scripts/new-claude-node.sh
+docs/claude-nodes.md
